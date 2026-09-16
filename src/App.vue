@@ -108,7 +108,7 @@
           <span v-for="info in contenuProfil.infos" :key="info">{{ info }}</span>
         </div>
         <p class="profil-scroll">
-          {{ profilEtape === profilEtapes.length - 1 ? "FIN DE LA FICHE · ÉCHAP POUR REVENIR" : "SCROLLER POUR LIRE LA SUITE" }}
+          {{ profilEtape === profilEtapes.length - 1 ? "FIN DE LA FICHE · ÉCHAP POUR REVENIR" : "SCROLLER / GLISSER POUR LIRE LA SUITE" }}
         </p>
         <button type="button" class="bouton-fermer" @click="fermerProfil">
           <span aria-hidden="true">×</span> RETOUR À LA GAMME
@@ -650,7 +650,8 @@ onMounted(async () => {
     console.error("Création de la scène 3D :", cause);
     return;
   }
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  const affichageMobile = window.innerWidth < 600;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, affichageMobile ? 1.2 : 1.5));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -702,7 +703,7 @@ onMounted(async () => {
   );
   lumiereHaute.position.set(0, 1.75, 0);
   lumiereHaute.castShadow = true;
-  lumiereHaute.shadow.mapSize.set(1024, 1024);
+  lumiereHaute.shadow.mapSize.set(affichageMobile ? 512 : 1024, affichageMobile ? 512 : 1024);
   lumiereHaute.shadow.bias = -0.0002;
   lumiereHaute.target.position.set(0, 0, 0.5);
   scene.add(lumiereHaute, lumiereHaute.target);
@@ -712,7 +713,7 @@ onMounted(async () => {
   );
   lumiereBasse.position.set(0, -1.5, 1);
   lumiereBasse.castShadow = true;
-  lumiereBasse.shadow.mapSize.set(1024, 1024);
+  lumiereBasse.shadow.mapSize.set(affichageMobile ? 512 : 1024, affichageMobile ? 512 : 1024);
   lumiereBasse.target.position.set(0, 0, 0.9);
   scene.add(lumiereBasse, lumiereBasse.target);
 
@@ -732,8 +733,7 @@ onMounted(async () => {
       chargerModele("/sneaker.glb"),
       new HDRLoader().loadAsync("/hdri2.hdr").then(conserver),
     ]);
-    // Le bouton ne devient utilisable qu'une fois les effets audio disponibles.
-    if (prechargementSons) await prechargementSons;
+    // Les sons se chargent en arrière-plan : ils ne bloquent pas la scène 3D.
     if (estDemonte) return;
 
     // Le HDR sert aux reflets du métal ; ce n'est pas l'image de fond.
@@ -778,7 +778,8 @@ onMounted(async () => {
      */
     // 5. Répéter les six modèles pour que le carrousel reste continu.
     const produits = [];
-    const nombreCopies = variantes.length * 4;
+    // Deux passages suffisent sur mobile et sollicitent moins le GPU.
+    const nombreCopies = variantes.length * (affichageMobile ? 2 : 4);
     for (let place = 0; place < nombreCopies; place++) {
       const index = place % variantes.length;
       const produit = modele.clone();
@@ -874,7 +875,9 @@ onMounted(async () => {
       lumiereInformation.position.y = cibleLumiere + 1.45;
       lumiereInformation.target.position.y = cibleLumiere;
       lumiereInformation.intensity = profilActif.value && !modeGammeComplete.value ? 18 : 0;
-      socle.visible = progressionProfil < 0.45 && progressionGammeComplete < 0.25;
+      // Dès que l'utilisateur revient à l'accueil, le socle réapparaît
+      // immédiatement au lieu de rester caché pendant la transition.
+      socle.visible = !profilActif.value || (progressionProfil < 0.45 && progressionGammeComplete < 0.25);
       const progressionBenefices = THREE.MathUtils.clamp(progressionEtape, 0, 1);
       // Réglages de la référence : fiche produit (z=6, FOV=40),
       // puis bénéfices (z=12, y=-2, FOV=20), à notre échelle ×0,5.
@@ -952,17 +955,19 @@ onMounted(async () => {
           distance * 1.55 - Math.PI / 9,
           Math.PI / 16,
         );
-        const finalOffset = place - 8.5;
+        // La composition finale reste centrée même avec moins de copies sur mobile.
+        const centreGammeFinale = affichageMobile ? (nombreCopies - 1) / 2 : 8.5;
+        const finalOffset = place - centreGammeFinale;
         const positionFinale = new THREE.Vector3(
           finalOffset * 1.02,
           -1.2 + finalOffset * 0.17,
           -1.3 - Math.abs(finalOffset) * 0.06,
         );
         const rotationFinale = new THREE.Euler(-0.12, finalOffset * 0.055, finalOffset * 0.028 - 0.12);
-        const estDansLaGammeFinale = place < 18;
+        const estDansLaGammeFinale = place < (affichageMobile ? nombreCopies : 18);
         objet.visible = progressionGammeComplete > 0.08
           ? estDansLaGammeFinale
-          : progressionProfil < 0.55 || auCentre;
+          : !profilActif.value || progressionProfil < 0.55 || auCentre;
         // Vue profil puis transition vers l’arc complet de produits.
         objet.position.lerp(positionHero, 1);
         // Sur mobile, le produit reste centré et remonte légèrement pour
